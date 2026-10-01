@@ -1,5 +1,5 @@
 import type { AckResult, SeatGrant } from '../../../shared/protocol.ts';
-import type { GameAction } from '../../../shared/types.ts';
+import type { GameAction, GameMode, VoiceSignal } from '../../../shared/types.ts';
 
 type Listener = (...args: any[]) => void;
 
@@ -107,10 +107,15 @@ function withTimeout<T extends object>(run: (done: (r: AckResult<T>) => void) =>
 }
 
 export const api = {
-  create: () => withTimeout<SeatGrant>((done) => socket.emit('room:create', {}, done)),
+  create: (mode: GameMode = 2) => withTimeout<SeatGrant>((done) => socket.emit('room:create', { mode }, done)),
   join: (roomId: string) => withTimeout<SeatGrant>((done) => socket.emit('room:join', { roomId }, done)),
   rejoin: (roomId: string, token: string) => withTimeout<SeatGrant>((done) => socket.emit('room:rejoin', { roomId, token }, done)),
   leave: () => withTimeout((done) => socket.emit('room:leave', done)),
   act: (action: GameAction) => withTimeout((done) => socket.emit('game:action', { action }, done)),
   continueGame: () => withTimeout((done) => socket.emit('game:continue', done)),
+  chat: (text: string) => withTimeout((done) => socket.emit('chat:send', { text }, done)),
+  voiceJoin: () => withTimeout((done) => socket.emit('voice:join', {}, done)),
+  voiceLeave: () => withTimeout((done) => socket.emit('voice:leave', {}, done)),
+  /** Fire-and-forget: WebRTC signalling must not wait for acknowledgements. */
+  voiceSignal: (to: number, data: VoiceSignal) => socket.emit('voice:signal', { to, data }),
 };
