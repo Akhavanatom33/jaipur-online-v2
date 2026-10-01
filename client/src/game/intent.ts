@@ -3,7 +3,7 @@
  * explanation. Purely advisory: the server re-validates everything.
  */
 import type { BonusSize, Card, GameAction, GameView, GoodType } from '../../../shared/types.ts';
-import { HAND_LIMIT, cardLabel } from '../../../shared/constants.ts';
+import { cardLabel } from '../../../shared/constants.ts';
 import { bonusSizeFor, checkExchange, checkSell, checkTakeCamels, checkTakeGood, type Check } from '../../../shared/rules.ts';
 
 export interface Selection {
@@ -24,6 +24,7 @@ export const EMPTY_SELECTION: Selection = { market: [], hand: [], camels: 0 };
 export function computeIntent(game: GameView, sel: Selection): Intent {
   const { market } = game.round;
   const { hand, herd } = game.me;
+  const limit = game.handLimit;
   const mCards = sel.market.map((id) => market.find((c) => c.id === id)).filter((c): c is Card => !!c);
   const hCards = sel.hand.map((id) => hand.find((c) => c.id === id)).filter((c): c is Card => !!c);
 
@@ -51,12 +52,12 @@ export function computeIntent(game: GameView, sel: Selection): Intent {
 
   if (mCards.length === 1 && !hCards.length && !sel.camels) {
     return {
-      kind: 'takeGood', card: mCards[0], check: checkTakeGood(market, hand, mCards[0].id),
+      kind: 'takeGood', card: mCards[0], check: checkTakeGood(market, hand, mCards[0].id, limit),
       action: { type: 'takeGood', cardId: mCards[0].id }, handAfter: hand.length + 1,
     };
   }
 
-  const check = checkExchange(market, hand, herd, sel.market, sel.hand, sel.camels);
+  const check = checkExchange(market, hand, herd, sel.market, sel.hand, sel.camels, limit);
   return {
     kind: 'exchange', take: mCards, give: hCards, camels: sel.camels, check,
     action: { type: 'exchange', takeIds: sel.market, giveIds: sel.hand, giveCamels: sel.camels },
@@ -75,4 +76,3 @@ export function intentLabel(intent: Intent): string {
   }
 }
 
-export { HAND_LIMIT };
