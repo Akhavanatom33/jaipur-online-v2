@@ -41,7 +41,6 @@ export function CardView({ card, faceDown, selected, dimmed, onClick, size = 'md
       style={style}
     >
       <span className="card__face">
-        <span className="card__pattern" />
         <span className="card__corner"><GoodIcon type={card.type} /></span>
         <span className="card__art"><GoodIcon type={card.type} /></span>
         <span className="card__name">{label.many}</span>
