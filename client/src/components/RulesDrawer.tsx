@@ -1,5 +1,5 @@
 import { useEffect } from 'react';
-import { CARD_COUNTS, CARD_LABELS, CARD_TYPES, GOODS, GOODS_TOKEN_VALUES, MAX_MISSED_TURNS, TURN_SECONDS } from '../../../shared/constants.ts';
+import { CARD_COUNTS, CARD_LABELS, CARD_TYPES, GAME_MODES, GOODS, GOODS_TOKEN_VALUES, MAX_MISSED_TURNS, MODES, TURN_SECONDS } from '../../../shared/constants.ts';
 import { GoodIcon } from './Icons.tsx';
 
 /** In-game rules, summarised from the official Space Cowboys rulebook. */
@@ -22,10 +22,17 @@ export function RulesDrawer({ open, onClose }: { open: boolean; onClose: () => v
         <div className="drawer__body">
           <p className="lede">Be the richer trader at the end of a round to earn a <b>Seal of Excellence</b>. The first to <b>2 seals</b> wins.</p>
 
-          <h3>The cards (55)</h3>
+          <h3>The cards (55 in a 2-player game)</h3>
           <ul className="rules-cards">
             {CARD_TYPES.map((t) => (
               <li key={t}><GoodIcon type={t} className={`glyph--${t}`} /> {CARD_LABELS[t].many} <span className="muted">×{CARD_COUNTS[t]}</span></li>
+            ))}
+          </ul>
+
+          <h3>Game modes</h3>
+          <ul className="rules-list">
+            {GAME_MODES.map((m) => (
+              <li key={m}><b>{MODES[m].title} ({m} players)</b>: {Object.values(MODES[m].cardCounts).reduce((a, b) => a + b, 0)} cards, a market of {MODES[m].marketSize}, hand limit {MODES[m].handLimit}{m > 2 ? ', longer token stacks. Play passes clockwise. The game ends as soon as someone has 2 seals, or after 3 rounds (most seals wins, then most rupees).' : '.'}</li>
             ))}
           </ul>
 
@@ -39,8 +46,9 @@ export function RulesDrawer({ open, onClose }: { open: boolean; onClose: () => v
             <li><b>Take all the camels</b> in the market (always all of them) into your herd. The deck refills the slots.</li>
             <li><b>Sell</b> any number of cards of <b>one</b> goods type. Take that many tokens from the top of its stack (highest first). Diamonds, gold and silver must be sold <b>2 or more</b> at a time.</li>
           </ol>
-          <p><b>Hand limit: 7 cards</b> at the end of your turn. Camels don't count.</p>
-          <p><b>Turn clock.</b> Every turn has a time limit (the ring next to the turn banner; {TURN_SECONDS} seconds by default). If it runs out you lose that turn and your opponent moves. Miss {MAX_MISSED_TURNS} turns in a row and you forfeit the game. Any move you make resets the counter.</p>
+          <p><b>Hand limit: 7 cards</b> (8 with 3 players, 9 with 4) at the end of your turn. Camels don't count.</p>
+          <p><b>Turn clock.</b> Every turn has a time limit (the ring next to the turn banner; {TURN_SECONDS} seconds by default). If it runs out you lose that turn and the next player moves. Miss {MAX_MISSED_TURNS} turns in a row and you forfeit the game. Any move you make resets the counter. With 3-4 players a forfeiting player is simply out; the rest play on.</p>
+          <p><b>Chat and voice.</b> Use the chat button (bottom corner) to write to the table, or join the voice channel to talk while you play.</p>
 
           <h3>Tokens</h3>
           <ul className="rules-tokens">
