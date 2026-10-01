@@ -1,4 +1,4 @@
-import type { PlayerIndex } from '../../shared/types.ts';
+import type { ChatMessage, GameMode, PlayerIndex } from '../../shared/types.ts';
 import type { GameState } from '../game/state.ts';
 
 export interface RoomPlayer {
@@ -16,14 +16,20 @@ export interface Room {
   id: string;
   createdAt: number;
   updatedAt: number;
-  players: [RoomPlayer | null, RoomPlayer | null];
+  /** 2, 3 or 4 seats. Optional so rooms saved by older versions (always 2 seats) still load. */
+  mode?: GameMode;
+  /** One slot per seat; null = empty seat while the room is waiting for players. */
+  players: (RoomPlayer | null)[];
   game: GameState | null;
-  ready: [boolean, boolean];
+  ready: boolean[];
   gameRecordId: string | null;
   /** Epoch ms when the current player's turn expires (null = no clock running). */
   turnDeadline?: number | null;
   /** Consecutive missed turns per seat. */
-  missed?: [number, number];
+  missed?: number[];
+  /** Last chat messages (kept with the room so a reconnecting player sees them). */
+  chat?: ChatMessage[];
+  chatSeq?: number;
 }
 
 export type Seat = PlayerIndex;
