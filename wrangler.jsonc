@@ -22,7 +22,7 @@
   "d1_databases": [
     {
       "binding": "DB",
-      "database_name": "jaipur-db",
+      "database_name": "jaipur",
       "database_id": "f509869b-2118-4f98-900d-4fa838260cfe"
     }
   ],
