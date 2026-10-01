@@ -35,12 +35,12 @@ export function TurnTimer({ turn, mine, missed }: Props) {
 
   useEffect(() => {
     if (!turn || !mine) return;
-    if (secs <= 10 && secs > 0 && lastTick.current !== secs) play('tick');
+    if (secs <= 5 && secs > 0 && lastTick.current !== secs) play('tick');
     lastTick.current = secs;
   }, [secs, mine, turn]);
 
   if (!turn) return null;
-  const tone = secs <= 10 ? 'danger' : secs <= 20 ? 'warn' : 'calm';
+  const tone = secs <= 5 ? 'danger' : secs <= 10 ? 'warn' : 'calm';
 
   return (
     <span
