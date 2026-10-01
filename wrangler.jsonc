@@ -1,0 +1,43 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "jaipur-online",
+  "main": "worker/index.ts",
+  "compatibility_date": "2026-10-01",
+  "workers_dev": true,
+  "observability": { "enabled": true },
+
+  // Builds the React client first, so `npx wrangler deploy` alone is always enough
+  // (the Cloudflare dashboard "Build command" may stay empty or be `npm run build`).
+  "build": { "command": "npm run build" },
+
+  "assets": {
+    "directory": "./dist/client",
+    "binding": "ASSETS",
+    "not_found_handling": "single-page-application",
+    "run_worker_first": ["/ws", "/api/*"]
+  },
+
+  // The SAME D1 database must be used by the admin bot (same database_id there).
+  // The Worker creates all tables itself on first use (see worker/schema.ts).
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "jaipur-db",
+      "database_id": "f509869b-2118-4f98-900d-4fa838260cfe"
+    }
+  ],
+
+  "durable_objects": {
+    "bindings": [
+      { "name": "HUB", "class_name": "JaipurHub" }
+    ]
+  },
+
+  // NOTE: ADMIN_API_TOKEN is an optional *secret* (set it in the dashboard after the
+  // first deploy). It is intentionally NOT listed under "secrets.required": a required
+  // secret makes the very first deploy fail because the Worker does not exist yet.
+
+  "migrations": [
+    { "tag": "v1", "new_sqlite_classes": ["JaipurHub"] }
+  ]
+}

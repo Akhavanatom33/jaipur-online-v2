@@ -1,0 +1,32 @@
+Jaipur Online v2 — files changed / added compared to the previous GitHub version
+
+NEW
+- worker/schema.ts                         self-healing D1 schema bootstrap
+- client/src/components/TurnTimer.tsx      countdown ring + fuse + missed-turn pips
+- client/src/components/Ambience.tsx       lights, rays, lanterns, dust, pointer spotlight
+- .gitignore
+- .dev.vars.example
+
+CHANGED
+- wrangler.jsonc                           removed secrets.required, added build command, observability
+- worker/index.ts                          ensureSchema, DO alarm for turn timers, atomic game record + coin rewards, deep health, TURN_SECONDS
+- worker/auth.ts                           TypeScript fixes (BufferSource)
+- server/rooms/RoomManager.ts              turn clock, expireTurns, restoreIndex, forfeit
+- server/rooms/types.ts                    turnDeadline, missed
+- server/game/engine.ts                    skipTurn, forfeitGame
+- server/game/state.ts                     forfeit
+- server/game/view.ts                      forfeit in view
+- server/tests/rooms.test.ts               +5 tests (turn clock, forfeit, pause/resume, restoreIndex)
+- shared/constants.ts                      TURN_SECONDS, MAX_MISSED_TURNS
+- shared/types.ts                          timeout/forfeit log kinds, TurnTimerView, RoomView.turn/missed
+- client/src/App.tsx                       Ambience, refresh of coins after a game
+- client/src/hooks/useAuth.ts              refresh()
+- client/src/pages/AuthPage.tsx            new animated login/register page
+- client/src/pages/GamePage.tsx            timer, forfeit dialog, coin burst, timeout toast/sounds
+- client/src/game/format.tsx               log text for timeout / forfeit
+- client/src/game/sound.ts                 tick / timeout / win sounds
+- client/src/components/RulesDrawer.tsx    turn clock rule
+- client/src/styles/index.css              v2 styles (appended block at the end + font variable)
+- client/index.html                        Vazirmatn font
+- db/schema.sql, db/migrations/001_auth_game_admin.sql   + bot_settings table
+- README.md, DEPLOY-CHECKLIST.md
