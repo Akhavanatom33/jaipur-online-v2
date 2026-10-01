@@ -1,5 +1,5 @@
 import type { Card, GameView, RoomPlayerView } from '../../../shared/types.ts';
-import { GOODS, HAND_LIMIT } from '../../../shared/constants.ts';
+import { GOODS } from '../../../shared/constants.ts';
 import { CardView } from './CardView.tsx';
 import { PlayerTokens } from './PlayerTokens.tsx';
 import { Score } from './Score.tsx';
@@ -23,6 +23,7 @@ const order = (c: Card) => GOODS.indexOf(c.type as (typeof GOODS)[number]);
 
 export function PlayerArea(p: Props) {
   const { me } = p.game;
+  const HAND_LIMIT = p.game.handLimit;
   const total = me.goodsTokens.reduce((s, t) => s + t.value, 0) + me.bonusTokens.reduce((s, t) => s + t.value, 0);
   const hand = [...me.hand].sort((a, b) => order(a) - order(b) || a.id.localeCompare(b.id));
   const after = p.handAfter ?? me.hand.length;
