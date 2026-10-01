@@ -1,8 +1,8 @@
 import type { Card, CardType, GameAction, PlayerIndex } from '../../shared/types.ts';
-import { GOODS, HAND_LIMIT, isPrecious } from '../../shared/constants.ts';
+import { GOODS, isPrecious, modeConfig } from '../../shared/constants.ts';
 import { validateAction } from '../game/engine.ts';
 import type { Rng } from '../game/rng.ts';
-import type { GameState } from '../game/state.ts';
+import { modeOf, type GameState } from '../game/state.ts';
 
 let n = 0;
 export const card = (type: CardType): Card => ({ id: `t${n++}`, type });
@@ -15,7 +15,7 @@ export function randomLegalAction(state: GameState, rng: Rng): GameAction {
   const me = r.players[p];
   const candidates: GameAction[] = [];
   const goodsInMarket = r.market.filter((c) => c.type !== 'camel');
-  if (me.hand.length < HAND_LIMIT) for (const c of goodsInMarket) candidates.push({ type: 'takeGood', cardId: c.id });
+  if (me.hand.length < modeConfig(modeOf(state)).handLimit) for (const c of goodsInMarket) candidates.push({ type: 'takeGood', cardId: c.id });
   if (r.market.some((c) => c.type === 'camel')) candidates.push({ type: 'takeCamels' });
   for (const g of GOODS) {
     const mine = me.hand.filter((c) => c.type === g);
