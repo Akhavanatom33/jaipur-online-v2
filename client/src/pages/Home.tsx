@@ -1,4 +1,6 @@
 import { useEffect, useState, type FormEvent } from 'react';
+import { GAME_MODES, MODES, deckSize } from '../../../shared/constants.ts';
+import type { GameMode } from '../../../shared/types.ts';
 import { ROOM_CODE_LENGTH, isRoomCodeFormat, normalizeRoomCode } from '../../../shared/protocol.ts';
 import type { RoomApi } from '../hooks/useRoom.ts';
 import type { ClientUser } from '../net/auth.ts';
@@ -13,13 +15,15 @@ export function Home({ room, user, onLogout }: { room: RoomApi; user: ClientUser
   const [busy, setBusy] = useState<'create' | 'join' | null>(null);
   const [error, setError] = useState<string | null>(room.notice);
   const [logoutBusy, setLogoutBusy] = useState(false);
+  const [gameMode, setGameMode] = useState<GameMode>(() => { const m = Number(local.get('jaipur.mode')); return m === 3 || m === 4 ? m : 2; });
 
   useEffect(() => { local.set(CODE_KEY, code); }, [code]);
   useEffect(() => { if (room.notice) { setError(room.notice); room.dismissNotice(); } }, [room.notice, room.dismissNotice]);
 
   const create = async () => {
     setBusy('create'); setError(null);
-    const res = await room.create();
+    local.set('jaipur.mode', String(gameMode));
+    const res = await room.create(gameMode);
     setBusy(null);
     if (!res.ok) setError(res.error);
   };
@@ -55,21 +59,33 @@ export function Home({ room, user, onLogout }: { room: RoomApi; user: ClientUser
           <span className="account-pill__balance">🪙 {user.coins} · 💎 {user.gems}</span>
           <button type="button" className="btn btn--link" onClick={logout} disabled={logoutBusy}>{logoutBusy ? '…' : 'خروج'}</button>
         </div>
-        <p className="eyebrow">A two-player trading game</p>
+        <p className="eyebrow">A trading game for 2, 3 or 4 players</p>
         <h1 className="home__title">Jaipur</h1>
-        <p className="home__tag">Trade goods in the Pink City's bazaar. Outsell your rival for two Seals of Excellence.</p>
+        <p className="home__tag">Trade goods in the Pink City's bazaar. Outsell your rivals for two Seals of Excellence.</p>
       </div>
 
       <div className="home__panel">
         {mode === 'choose' ? (
+          <>
+          <div className="modes" role="radiogroup" aria-label="Game mode">
+            {GAME_MODES.map((m) => (
+              <button key={m} type="button" role="radio" aria-checked={gameMode === m} className={`mode ${gameMode === m ? 'is-on' : ''}`} onClick={() => setGameMode(m)}>
+                <span className="mode__n">{m}</span>
+                <span className="mode__title">{MODES[m].title}</span>
+                <span className="mode__meta">{deckSize(m)} cards</span>
+              </button>
+            ))}
+          </div>
+          <p className="modes__tag">{MODES[gameMode].tagline}</p>
           <div className="home__choices">
             <button type="button" className="btn btn--primary btn--xl" onClick={create} disabled={!!busy || !room.connected}>
-              {busy === 'create' ? 'Opening your stall…' : 'Create room'}
+              {busy === 'create' ? 'Opening your stall…' : `Create ${gameMode}-player room`}
             </button>
             <button type="button" className="btn btn--ghost btn--xl" onClick={() => { setMode('join'); setError(null); }} disabled={!!busy}>
               Join room
             </button>
           </div>
+          </>
         ) : (
           <form className="join" onSubmit={join} noValidate>
             <label className="field">
