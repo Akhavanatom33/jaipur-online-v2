@@ -1,11 +1,11 @@
 import { DurableObject } from 'cloudflare:workers';
 import type { Ack, ClientToServerEvents } from '../shared/protocol.ts';
-import type { PlayerIndex } from '../shared/types.ts';
+import type { GameMode, PlayerIndex } from '../shared/types.ts';
 import { RoomManager } from '../server/rooms/RoomManager.ts';
 import { MemoryRoomStore } from '../server/rooms/store.ts';
 import type { Room } from '../server/rooms/types.ts';
 import { addAudit, getUserById } from './db.ts';
-import { TURN_SECONDS } from '../shared/constants.ts';
+import { LOSS_COINS, TURN_SECONDS, modeConfig } from '../shared/constants.ts';
 import { ensureSchema } from './schema.ts';
 import { getCurrentUser, hashPassword, issueSession, normalizeUsername, publicUser, revokeSession, validatePassword, validateUsername, verifyPassword } from './auth.ts';
 
@@ -14,13 +14,32 @@ export interface Env {
   ASSETS: Fetcher;
   DB: D1Database;
   ADMIN_API_TOKEN: string;
-  /** Optional variable: seconds per turn (10-300). Defaults to 60. */
+  /** Optional variable: seconds per turn (10-300). Defaults to 20. */
   TURN_SECONDS?: string;
+  /** Optional (voice chat behind strict NATs): Cloudflare Realtime TURN key id + API token (secret). */
+  TURN_KEY_ID?: string;
+  TURN_KEY_API_TOKEN?: string;
 }
 
-/** Small coin rewards paid when a game is finished (the admin bot can adjust balances). */
-const WIN_COINS = 50;
-const LOSS_COINS = 10;
+/** Voice chat ICE servers. STUN is enough for most networks; TURN (optional) relays the rest. */
+const STUN_ONLY = [{ urls: ['stun:stun.cloudflare.com:3478', 'stun:stun.l.google.com:19302'] }];
+
+async function loadIceServers(env: Env): Promise<unknown[]> {
+  if (!env.TURN_KEY_ID || !env.TURN_KEY_API_TOKEN) return STUN_ONLY;
+  try {
+    const res = await fetch(`https://rtc.live.cloudflare.com/v1/turn/keys/${encodeURIComponent(env.TURN_KEY_ID)}/credentials/generate-ice-servers`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${env.TURN_KEY_API_TOKEN}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ttl: 6 * 3600 }),
+    });
+    if (!res.ok) return STUN_ONLY;
+    const data = await res.json() as { iceServers?: unknown };
+    const list = Array.isArray(data.iceServers) ? data.iceServers : data.iceServers ? [data.iceServers] : [];
+    return list.length ? list : STUN_ONLY;
+  } catch {
+    return STUN_ONLY;
+  }
+}
 
 function turnMsFrom(raw: string | undefined): number {
   const n = Number(raw);
@@ -74,7 +93,7 @@ export default {
       }
     }
 
-    const needsDb = url.pathname.startsWith('/api/auth/') || url.pathname === '/ws' || url.pathname === '/api/admin/presence';
+    const needsDb = url.pathname.startsWith('/api/auth/') || url.pathname === '/ws' || url.pathname === '/api/admin/presence' || url.pathname === '/api/voice/ice';
     if (needsDb) {
       try { await ensureSchema(env.DB); } catch (e) {
         console.error('D1 schema bootstrap failed', e);
@@ -161,6 +180,12 @@ export default {
       if (!env.ADMIN_API_TOKEN || request.headers.get('X-Admin-API-Token') !== env.ADMIN_API_TOKEN) return error('Unauthorized.', 401);
       const stub = env.HUB.get(env.HUB.idFromName('main'));
       return stub.fetch(new Request(new URL('/internal/admin/presence', request.url), { headers: { 'X-Admin-API-Token': env.ADMIN_API_TOKEN } }));
+    }
+
+    if (url.pathname === '/api/voice/ice' && request.method === 'GET') {
+      const user = await getCurrentUser(env.DB, request);
+      if (!user) return error('Authentication required.', 401);
+      return json({ ok: true, iceServers: await loadIceServers(env) });
     }
 
     if (url.pathname === '/ws') {
@@ -267,9 +292,17 @@ export class JaipurHub extends DurableObject<Env> {
 
   private broadcast(room: Room | null | undefined) {
     if (!room || !this.manager.getRoom(room.id)) return;
+    const seats = this.manager.voiceSeats(room);
     room.players.forEach((p, seat) => {
-      if (p?.socketId) this.send(p.socketId, { t: 'event', event: 'room:state', payload: this.manager.viewFor(room, seat as PlayerIndex) });
+      if (!p?.socketId) return;
+      this.send(p.socketId, { t: 'event', event: 'room:state', payload: this.manager.viewFor(room, seat as PlayerIndex) });
+      this.send(p.socketId, { t: 'event', event: 'voice:peers', payload: { seats } });
     });
+  }
+
+  /** Send one event to every connected player of a room. */
+  private broadcastEvent(room: Room, event: string, payload: unknown) {
+    for (const p of room.players) if (p?.socketId) this.send(p.socketId, { t: 'event', event, payload });
   }
 
   private persist() {
@@ -296,13 +329,12 @@ export class JaipurHub extends DurableObject<Env> {
   private async recordGameIfFinished(room: Room) {
     const game = room.game;
     if (!game || game.phase !== 'gameOver' || room.gameRecordId) return;
-    const p1 = room.players[0];
-    const p2 = room.players[1];
-    if (!p1 || !p2 || game.winner === null) return;
+    const seated = room.players.filter((p): p is NonNullable<typeof p> => p !== null);
+    if (seated.length < 2 || game.winner === null || seated.length !== room.players.length) return;
     const recordId = crypto.randomUUID();
     room.gameRecordId = recordId;
     try {
-      await this.writeGameRecord(room, recordId, p1.userId, p2.userId);
+      await this.writeGameRecord(room, recordId);
     } catch (e) {
       // Never break a live game because the history write failed; allow a retry later.
       room.gameRecordId = null;
@@ -310,21 +342,23 @@ export class JaipurHub extends DurableObject<Env> {
     }
   }
 
-  private async writeGameRecord(room: Room, recordId: string, p1Id: string, p2Id: string) {
+  private async writeGameRecord(room: Room, recordId: string) {
     const game = room.game!;
-    const p1 = { userId: p1Id };
-    const p2 = { userId: p2Id };
-    const winnerId = game.winner === 0 ? p1.userId : p2.userId;
-    const resultJson = JSON.stringify({ results: game.results, winner: game.winner, seals: game.seals, forfeit: game.forfeit ?? null });
-    const loserId = winnerId === p1.userId ? p2.userId : p1.userId;
+    const ids = room.players.map((p) => p!.userId);
+    const mode = (room.mode ?? ids.length) as GameMode;
+    const winnerId = ids[game.winner as number];
+    const winCoins = modeConfig(mode).winCoins;
+    // game_history keeps two player columns (schema unchanged); every participant is listed in result_json.
+    const resultJson = JSON.stringify({ mode, players: ids, results: game.results, winner: game.winner, seals: game.seals, forfeit: game.forfeit ?? null });
+    const losers = [...new Set(ids.filter((id) => id !== winnerId))];
     // One atomic batch: history row, win/loss counters, small coin rewards and the audit entry.
     await this.env.DB.batch([
       this.env.DB.prepare(`INSERT OR IGNORE INTO game_history (room_id, player1_user_id, player2_user_id, winner_user_id, round_count, result_json, ended_at, game_record_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`)
-        .bind(room.id, p1.userId, p2.userId, winnerId, game.results.length, resultJson, Date.now(), recordId),
-      this.env.DB.prepare(`UPDATE users SET games_played = games_played + 1, wins = wins + 1, coins = coins + ? WHERE id = ?`).bind(WIN_COINS, winnerId),
-      this.env.DB.prepare(`UPDATE users SET games_played = games_played + 1, losses = losses + 1, coins = coins + ? WHERE id = ?`).bind(LOSS_COINS, loserId),
+        .bind(room.id, ids[0], ids[1], winnerId, game.results.length, resultJson, Date.now(), recordId),
+      this.env.DB.prepare(`UPDATE users SET games_played = games_played + 1, wins = wins + 1, coins = coins + ? WHERE id = ?`).bind(winCoins, winnerId),
+      ...losers.map((id) => this.env.DB.prepare(`UPDATE users SET games_played = games_played + 1, losses = losses + 1, coins = coins + ? WHERE id = ?`).bind(LOSS_COINS, id)),
       this.env.DB.prepare(`INSERT INTO audit_logs (actor_type, actor_id, action, target_user_id, details_json, created_at) VALUES ('system', NULL, 'game_finished', ?, ?, ?)`)
-        .bind(winnerId, JSON.stringify({ roomId: room.id, recordId, players: [p1.userId, p2.userId], forfeit: game.forfeit ?? null }), Date.now()),
+        .bind(winnerId, JSON.stringify({ roomId: room.id, recordId, mode, players: ids, forfeit: game.forfeit ?? null }), Date.now()),
     ]);
   }
 
@@ -336,7 +370,7 @@ export class JaipurHub extends DurableObject<Env> {
 
     const auth = this.socketUsers.get(sid);
     if (!auth) return this.send(sid, { t: 'ack', id: msg.id, res: { ok: false, code: 'SESSION_EXPIRED', error: 'Session expired. Log in again.' } });
-    if (msg.event !== undefined) {
+    if (msg.event !== undefined && msg.event !== 'voice:signal') {
       const liveUser = await getUserById(this.env.DB, auth.id);
       if (!liveUser || Number(liveUser.blocked) === 1) {
         this.send(sid, { t: 'ack', id: msg.id, res: { ok: false, code: 'SESSION_EXPIRED', error: 'This account is no longer active.' } });
@@ -350,18 +384,20 @@ export class JaipurHub extends DurableObject<Env> {
     const m = this.manager;
     const grant = async (res: ReturnType<RoomManager['createRoom']>) => {
       if (!res.ok) return reply(res);
-      for (const r of res.affected) this.broadcast(r);
+      for (const r of res.affected) { await this.recordGameIfFinished(r); this.broadcast(r); }
       reply({ ok: true, roomId: res.room.id, token: res.token, you: res.seat } satisfies { ok: true } & SeatGrantRes);
       this.broadcast(res.room);
+      this.send(sid, { t: 'event', event: 'chat:history', payload: m.chatHistory(res.room) });
       this.persist();
     };
 
     switch (msg.event) {
-      case 'room:create': await grant(m.createRoom(auth.id, auth.username, sid)); break;
+      case 'room:create': await grant(m.createRoom(auth.id, auth.username, sid, payload.mode)); break;
       case 'room:join': await grant(m.joinRoom(auth.id, auth.username, payload.roomId, sid)); break;
       case 'room:rejoin': await grant(m.rejoinRoom(auth.id, payload.roomId, payload.token, sid)); break;
       case 'room:leave': {
         const room = m.leaveRoom(sid);
+        if (room) await this.recordGameIfFinished(room);
         reply({ ok: true });
         this.broadcast(room);
         break;
@@ -382,6 +418,36 @@ export class JaipurHub extends DurableObject<Env> {
         reply({ ok: true });
         this.broadcast(res.room);
         break;
+      }
+      case 'chat:send': {
+        const res = m.chat(sid, payload.text);
+        if (!res.ok) return reply(res);
+        reply({ ok: true });
+        this.broadcastEvent(res.room, 'chat:message', res.message);
+        break;
+      }
+      case 'voice:join': {
+        const res = m.voiceJoin(sid);
+        if (!res.ok) return reply(res);
+        reply({ ok: true });
+        this.broadcast(res.room);
+        break;
+      }
+      case 'voice:leave': {
+        const res = m.voiceLeave(sid);
+        if (!res.ok) return reply(res);
+        reply({ ok: true });
+        this.broadcast(res.room);
+        break;
+      }
+      case 'voice:signal': {
+        // Relay WebRTC offers/answers/candidates between two members of the same voice channel.
+        if (JSON.stringify(payload.data ?? null).length > 24_000) return reply({ ok: false, code: 'BAD_REQUEST', error: 'Signal too large.' });
+        const route = m.voiceRoute(sid, payload.to);
+        if (!route.ok) return reply(route);
+        this.send(route.toSocketId, { t: 'event', event: 'voice:signal', payload: { from: route.from, data: payload.data } });
+        reply({ ok: true });
+        return; // nothing in the game changed: skip persist/alarm work
       }
       default: reply({ ok: false, code: 'BAD_REQUEST', error: 'Unknown request.' });
     }
