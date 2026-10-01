@@ -1,8 +1,8 @@
 /** Projects secret server state into what ONE player may see. */
-import type { BonusSize, GameView, GoodType, HerdHint, PlayerIndex } from '../../shared/types.ts';
-import { BONUS_SIZES, GOODS } from '../../shared/constants.ts';
-import { depletedTypes } from './engine.ts';
-import { other, type GameState } from './state.ts';
+import type { BonusSize, GameView, GoodType, HerdHint, OpponentView, PlayerIndex } from '../../shared/types.ts';
+import { BONUS_SIZES, GOODS, modeConfig } from '../../shared/constants.ts';
+import { depletedTypes, maxRoundsFor } from './engine.ts';
+import { modeOf, type GameState } from './state.ts';
 
 export function herdHint(n: number): HerdHint {
   if (n === 0) return 'none';
@@ -13,15 +13,34 @@ export function herdHint(n: number): HerdHint {
 
 export function toGameView(state: GameState, viewer: PlayerIndex): GameView {
   const r = state.round;
+  const mode = modeOf(state);
+  const cfg = modeConfig(mode);
   const me = r.players[viewer];
-  const opp = r.players[other(viewer)];
   const goodsTokens = {} as Record<GoodType, GameView['round']['goodsTokens'][GoodType]>;
   for (const g of GOODS) goodsTokens[g] = r.goodsTokens[g].map((t) => ({ ...t }));
   const bonusStacks = {} as Record<BonusSize, string[]>;
   for (const s of BONUS_SIZES) bonusStacks[s] = r.bonusStacks[s].map((t) => t.id);
 
+  // Opponents in clockwise order, starting with the player who moves after the viewer.
+  const opponents: OpponentView[] = [];
+  for (let i = 1; i < r.players.length; i++) {
+    const seat = ((viewer + i) % r.players.length) as PlayerIndex;
+    const opp = r.players[seat];
+    opponents.push({
+      seat,
+      handCount: opp.hand.length,
+      herdHint: herdHint(opp.herd.length),
+      goodsTokens: opp.goodsTokens.map((t) => ({ ...t })),
+      bonusTokens: opp.bonusTokens.map((t) => ({ id: t.id, size: t.size, value: null })),
+    });
+  }
+
   return {
     phase: state.phase,
+    mode,
+    handLimit: cfg.handLimit,
+    marketSize: cfg.marketSize,
+    maxRounds: maxRoundsFor(mode),
     round: {
       number: r.number,
       deckCount: r.deck.length,
@@ -41,13 +60,9 @@ export function toGameView(state: GameState, viewer: PlayerIndex): GameView {
       goodsTokens: me.goodsTokens.map((t) => ({ ...t })),
       bonusTokens: me.bonusTokens.map((t) => ({ ...t })),
     },
-    opponent: {
-      handCount: opp.hand.length,
-      herdHint: herdHint(opp.herd.length),
-      goodsTokens: opp.goodsTokens.map((t) => ({ ...t })),
-      bonusTokens: opp.bonusTokens.map((t) => ({ id: t.id, size: t.size, value: null })),
-    },
-    seals: [state.seals[0], state.seals[1]],
+    opponents,
+    seals: state.seals.slice(),
+    out: r.players.map((_, i) => Boolean(state.out?.[i])),
     // Results are revealed in full once a round has ended.
     results: structuredClone(state.results),
     winner: state.winner,
