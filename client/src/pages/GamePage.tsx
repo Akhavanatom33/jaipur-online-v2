@@ -22,10 +22,11 @@ export function GamePage({ room }: { room: RoomApi }) {
   const game = view.game!;
   const r = game.round;
   const you = view.you;
-  const opp = (you === 0 ? 1 : 0) as PlayerIndex;
   const myTurn = game.phase === 'playing' && r.currentPlayer === you;
   const name = useCallback((p: PlayerIndex) => view.players[p]?.name ?? `Player ${p + 1}`, [view.players]);
-  const oppName = name(opp);
+  const curName = name(r.currentPlayer);
+  const imOut = game.out[you];
+  const multi = game.mode > 2;
 
   const [sel, setSel] = useState<Selection>(EMPTY_SELECTION);
   const [busy, setBusy] = useState(false);
@@ -105,11 +106,11 @@ export function GamePage({ room }: { room: RoomApi }) {
     const mine = ev.player === you;
     if (dir === 'exit') {
       if (ev.type === 'sell') return 'discard';
-      if (!mine) return kind === 'camel' ? 'opp-herd' : 'opp-hand';
+      if (!mine) return kind === 'camel' ? `opp-herd-${ev.player}` : `opp-hand-${ev.player}`;
       return null;
     }
     if (!r.market.some((c) => c.id === id)) return null;
-    if (ev.type === 'exchange' && !mine) return kind === 'camel' ? 'opp-herd' : 'opp-hand';
+    if (ev.type === 'exchange' && !mine) return kind === 'camel' ? `opp-herd-${ev.player}` : `opp-hand-${ev.player}`;
     if (ev.type === 'takeGood' || ev.type === 'takeCamels') return 'deck';
     return null;
   };
@@ -119,7 +120,7 @@ export function GamePage({ room }: { room: RoomApi }) {
   const typeOf = (id: string) => r.market.find((c) => c.id === id)?.type ?? game.me.hand.find((c) => c.id === id)?.type;
   const camelMode = sel.market.length > 0 && sel.market.every((id) => typeOf(id) === 'camel');
   const notYourTurn = () => {
-    if (game.phase === 'playing') toast(`It's ${oppName}'s turn.`);
+    if (game.phase === 'playing') toast(`It's ${curName}'s turn.`);
     play('error');
   };
 
@@ -192,8 +193,7 @@ export function GamePage({ room }: { room: RoomApi }) {
   };
 
   // ---- derived UI ----------------------------------------------------------
-  const oppPlayer = view.players[opp];
-  const lastOpp = [...game.log].reverse().find((e) => 'player' in e && e.player === opp && ['takeGood', 'takeCamels', 'exchange', 'sell'].includes(e.kind));
+  const lastOpp = [...game.log].reverse().find((e) => 'player' in e && e.player !== you && ['takeGood', 'takeCamels', 'exchange', 'sell'].includes(e.kind));
   const lastResult = game.results[game.results.length - 1];
   const showForfeit = game.phase === 'gameOver' && game.forfeit !== null && !peek;
   const showSummary = game.phase !== 'playing' && summaryReady && !peek && lastResult && !showForfeit;
@@ -207,7 +207,8 @@ export function GamePage({ room }: { room: RoomApi }) {
         <button type="button" className="chip" onClick={copyCode} title="Copy room code">
           Room <b>{view.roomId}</b> {codeCopied ? '✓' : ''}
         </button>
-        <span className="chip chip--plain">Round {r.number}</span>
+        <span className="chip chip--plain">Round {r.number}{game.maxRounds ? ` / ${game.maxRounds}` : ''}</span>
+        {multi && <span className="chip chip--mode">{game.mode} players</span>}
         <span className="topbar__spacer" />
         <button type="button" className="icon-btn" onClick={() => { setMuted(!muted); setMutedState(!muted); }} aria-label={muted ? 'Unmute sounds' : 'Mute sounds'} title={muted ? 'Sound off' : 'Sound on'}>
           {muted ? '🔇' : '🔊'}
@@ -219,18 +220,31 @@ export function GamePage({ room }: { room: RoomApi }) {
       </header>
 
       {!room.connected && <div className="banner banner--warn">Connection lost. Reconnecting…</div>}
-      {oppPlayer && !oppPlayer.connected && !oppPlayer.left && <div className="banner">{oppName} lost connection. Their seat is saved; the game resumes when they return.</div>}
-      {oppPlayer?.left && game.phase === 'playing' && (
-        <div className="banner banner--warn">{oppName} left the game. <button type="button" className="btn btn--link" onClick={() => room.leave()}>Back to lobby</button></div>
+      {game.opponents.map((o) => {
+        const pl = view.players[o.seat];
+        if (!pl) return null;
+        if (pl.left) return game.phase === 'playing' && !multi ? (
+          <div className="banner banner--warn" key={o.seat}>{name(o.seat)} left the game. <button type="button" className="btn btn--link" onClick={() => room.leave()}>Back to lobby</button></div>
+        ) : multi && game.phase !== 'gameOver' ? <div className="banner banner--warn" key={o.seat}>{name(o.seat)} left the game and is out.</div> : null;
+        if (!pl.connected) return <div className="banner" key={o.seat}>{name(o.seat)} lost connection. Their seat is saved; the game resumes when they return.</div>;
+        return null;
+      })}
+      {imOut && game.phase !== 'gameOver' && (
+        <div className="banner banner--warn">You missed too many turns and are out of this game. You can keep watching and chatting.</div>
       )}
 
-      <OpponentArea game={game} player={oppPlayer} active={game.phase === 'playing' && r.currentPlayer === opp} seals={game.seals[opp]} />
+      <div className={`opponents opponents--${game.opponents.length}`}>
+        {game.opponents.map((o) => (
+          <OpponentArea key={o.seat} game={game} opp={o} player={view.players[o.seat]} out={game.out[o.seat]}
+            compact={multi} active={game.phase === 'playing' && r.currentPlayer === o.seat} seals={game.seals[o.seat]} />
+        ))}
+      </div>
 
       <div className="board">
         <TokenBazaar round={r} highlight={sellGood} />
         <div className="board__center">
           <div className={`turn ${myTurn ? 'turn--mine' : 'turn--theirs'}`} aria-live="polite" key={`${r.currentPlayer}-${game.version}`}>
-            <span className="turn__who">{game.phase !== 'playing' ? 'Round over' : myTurn ? 'Your turn' : `${oppName}'s turn`}</span>
+            <span className="turn__who">{game.phase !== 'playing' ? 'Round over' : myTurn ? 'Your turn' : `${curName}'s turn`}</span>
             {game.phase === 'playing' && <TurnTimer turn={view.turn} mine={myTurn} missed={view.missed[r.currentPlayer]} />}
             {lastOpp && myTurn && <span className="turn__last">{formatLog(lastOpp, name).text}</span>}
           </div>
@@ -243,7 +257,7 @@ export function GamePage({ room }: { room: RoomApi }) {
         game={game}
         intent={intent}
         myTurn={myTurn}
-        opponentName={oppName}
+        opponentName={curName}
         busy={busy}
         onSubmit={() => void submit()}
         onClear={() => setSel(EMPTY_SELECTION)}
@@ -276,12 +290,14 @@ export function GamePage({ room }: { room: RoomApi }) {
             <div className="forfeit__icon" aria-hidden>{game.winner === you ? '🏆' : '⏳'}</div>
             <h2 className="summary__title">{game.winner === you ? 'You win!' : `${name(game.winner as PlayerIndex)} wins`}</h2>
             <p className="summary__sub">
-              {game.forfeit === you
-                ? `You missed ${MAX_MISSED_TURNS} turns in a row, so the game was forfeited.`
-                : `${name(game.forfeit as PlayerIndex)} missed ${MAX_MISSED_TURNS} turns in a row and forfeited the game.`}
+              {multi
+                ? game.winner === you ? 'Everybody else forfeited or left the table.' : game.forfeit === you ? 'You were out of the game, so it ended without you.' : 'Every other player forfeited or left the table.'
+                : game.forfeit === you
+                  ? `You missed ${MAX_MISSED_TURNS} turns in a row or left, so the game was forfeited.`
+                  : `${name(game.forfeit as PlayerIndex)} missed ${MAX_MISSED_TURNS} turns in a row or left, and forfeited the game.`}
             </p>
             <div className="summary__actions">
-              <button type="button" className="btn btn--primary btn--xl" onClick={onContinue} disabled={view.ready[you]}>{view.ready[you] ? 'Waiting for opponent…' : 'Play again'}</button>
+              <button type="button" className="btn btn--primary btn--xl" onClick={onContinue} disabled={view.ready[you]}>{view.ready[you] ? 'Waiting for the others…' : 'Play again'}</button>
               <button type="button" className="btn btn--ghost" onClick={() => room.leave()}>Leave</button>
             </div>
           </div>
