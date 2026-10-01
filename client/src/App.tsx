@@ -1,4 +1,5 @@
 import { useEffect } from 'react';
+import { Social } from './components/Social.tsx';
 import { Ambience } from './components/Ambience.tsx';
 import { GamePage } from './pages/GamePage.tsx';
 import { Home } from './pages/Home.tsx';
@@ -49,6 +50,7 @@ export function App() {
     <>
       <Ambience mood={myTurn ? 'turn' : 'calm'} />
       {page}
+      {room.view && <Social key={room.view.roomId} view={room.view} />}
     </>
   );
 }
