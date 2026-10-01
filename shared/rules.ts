@@ -4,6 +4,8 @@
  * The SERVER calls these to decide legality (authoritative).
  * The CLIENT calls the same functions only to pre-validate the UI
  * (enable/disable buttons, explain why). It never decides outcomes.
+ *
+ * The hand limit depends on the game mode (7 / 8 / 9), so it is a parameter.
  */
 import type { BonusSize, Card, GoodType } from './types.ts';
 import { HAND_LIMIT, MIN_EXCHANGE, MIN_PRECIOUS_SALE, cardLabel, isPrecious } from './constants.ts';
@@ -14,11 +16,11 @@ const OK: Check = { ok: true };
 const fail = (reason: string): Check => ({ ok: false, reason });
 const hasDuplicates = (ids: readonly string[]) => new Set(ids).size !== ids.length;
 
-export function checkTakeGood(market: readonly Card[], hand: readonly Card[], cardId: string): Check {
+export function checkTakeGood(market: readonly Card[], hand: readonly Card[], cardId: string, handLimit: number = HAND_LIMIT): Check {
   const card = market.find((c) => c.id === cardId);
   if (!card) return fail('That card is not in the market.');
   if (card.type === 'camel') return fail('Camels are never taken one at a time: take them all.');
-  if (hand.length >= HAND_LIMIT) return fail(`Your hand is full (${HAND_LIMIT} cards). Sell or exchange instead.`);
+  if (hand.length >= handLimit) return fail(`Your hand is full (${handLimit} cards). Sell or exchange instead.`);
   return OK;
 }
 
@@ -33,6 +35,7 @@ export function checkExchange(
   takeIds: readonly string[],
   giveIds: readonly string[],
   giveCamels: number,
+  handLimit: number = HAND_LIMIT,
 ): Check {
   if (!Number.isInteger(giveCamels) || giveCamels < 0) return fail('Invalid number of camels.');
   if (hasDuplicates(takeIds) || hasDuplicates(giveIds)) return fail('Each card can only be chosen once.');
@@ -51,7 +54,7 @@ export function checkExchange(
   const clash = given.find((c) => takenTypes.has(c!.type));
   if (clash) return fail(`The same goods can't be taken and given back (${cardLabel(clash.type)}).`);
   const after = hand.length - giveIds.length + takeIds.length;
-  if (after > HAND_LIMIT) return fail(`That leaves ${after} cards in hand; the limit is ${HAND_LIMIT}.`);
+  if (after > handLimit) return fail(`That leaves ${after} cards in hand; the limit is ${handLimit}.`);
   return OK;
 }
 
