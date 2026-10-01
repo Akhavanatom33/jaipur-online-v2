@@ -4,7 +4,7 @@ import { GoodIcon } from '../components/Icons.tsx';
 
 export function Lobby({ view, onLeave }: { view: RoomView; onLeave: () => void }) {
   const [copied, setCopied] = useState<'code' | 'link' | null>(null);
-  const me = view.players[view.you];
+  const missing = view.players.filter((p) => p === null).length;
   const link = `${location.origin}${location.pathname}?room=${view.roomId}`;
 
   const copy = async (what: 'code' | 'link') => {
@@ -36,10 +36,13 @@ export function Lobby({ view, onLeave }: { view: RoomView; onLeave: () => void }
       </div>
 
       <ol className="slots">
-        <li className="slot is-filled"><span className="slot__n">1</span><span>{me?.name ?? 'You'}</span><span className="muted">host</span></li>
-        <li className="slot is-waiting"><span className="slot__n">2</span><span>Waiting for opponent<span className="dots"><i>.</i><i>.</i><i>.</i></span></span></li>
+        {view.players.map((p, i) => p ? (
+          <li key={i} className="slot is-filled"><span className="slot__n">{i + 1}</span><span>{p.name}{i === view.you ? ' (you)' : ''}</span><span className="muted">{i === 0 ? 'host' : p.connected ? 'ready' : 'offline'}</span></li>
+        ) : (
+          <li key={i} className="slot is-waiting"><span className="slot__n">{i + 1}</span><span>Waiting for player<span className="dots"><i>.</i><i>.</i><i>.</i></span></span></li>
+        ))}
       </ol>
-      <p className="lobby__note">The game starts the moment they join.</p>
+      <p className="lobby__note">{view.mode}-player game · {missing === 1 ? 'one more player to go.' : `${missing} more players to go.`} It starts the moment the last seat is taken. Use chat or voice while you wait.</p>
       <button type="button" className="btn btn--link" onClick={onLeave}>Close room</button>
     </main>
   );
