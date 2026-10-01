@@ -4,7 +4,10 @@
  */
 export type GoodType = 'diamond' | 'gold' | 'silver' | 'cloth' | 'spice' | 'leather';
 export type CardType = GoodType | 'camel';
-export type PlayerIndex = 0 | 1;
+/** Seat number, 0..3 (seats are in clockwise turn order). */
+export type PlayerIndex = 0 | 1 | 2 | 3;
+/** Number of players in a game: 2 (classic), 3 (Trio) or 4 (Grand Bazaar). */
+export type GameMode = 2 | 3 | 4;
 export type BonusSize = 3 | 4 | 5;
 
 export interface Card {
@@ -58,11 +61,13 @@ export interface ScoreBreakdown {
 export interface RoundResult {
   round: number;
   reason: RoundEndReason;
-  scores: [ScoreBreakdown, ScoreBreakdown];
+  /** One entry per seat. */
+  scores: ScoreBreakdown[];
   camelWinner: PlayerIndex | null;
   sealWinner: PlayerIndex | null;
   decidedBy: SealDecider;
-  sealsAfter: [number, number];
+  /** Seals per seat after this round. */
+  sealsAfter: number[];
 }
 
 export type LogBody =
@@ -117,6 +122,7 @@ export interface SelfView {
 export type HerdHint = 'none' | 'few' | 'herd' | 'caravan';
 
 export interface OpponentView {
+  seat: PlayerIndex;
   handCount: number;
   herdHint: HerdHint;
   goodsTokens: GoodsToken[];
@@ -125,13 +131,21 @@ export interface OpponentView {
 
 export interface GameView {
   phase: GamePhase;
+  mode: GameMode;
+  handLimit: number;
+  marketSize: number;
+  /** Rounds after which a 3/4-player game is over (null = play until someone has 2 seals). */
+  maxRounds: number | null;
   round: PublicRoundView;
   me: SelfView;
-  opponent: OpponentView;
-  seals: [number, number];
+  /** The other players, in turn order starting after you. */
+  opponents: OpponentView[];
+  seals: number[];
+  /** Seats that forfeited or left (they are skipped). */
+  out: boolean[];
   results: RoundResult[];
   winner: PlayerIndex | null;
-  /** Set when the game ended because this player missed too many turns. */
+  /** Set when the game ended because this player missed too many turns / left. */
   forfeit: PlayerIndex | null;
   log: LogEntry[];
   lastEvent: GameEvent | null;
@@ -156,13 +170,33 @@ export interface TurnTimerView {
 export interface RoomView {
   roomId: string;
   you: PlayerIndex;
-  players: [RoomPlayerView | null, RoomPlayerView | null];
+  mode: GameMode;
+  /** One slot per seat; null = empty seat (only while waiting). */
+  players: (RoomPlayerView | null)[];
   status: RoomStatus;
   /** "Continue" votes between rounds / for a rematch. */
-  ready: [boolean, boolean];
+  ready: boolean[];
   /** Consecutive missed turns per seat. */
-  missed: [number, number];
+  missed: number[];
   /** Present only while a round is being played. */
   turn: TurnTimerView | null;
   game: GameView | null;
 }
+
+// ---------------------------------------------------------------------------
+// Chat & voice
+// ---------------------------------------------------------------------------
+
+export interface ChatMessage {
+  id: number;
+  seat: PlayerIndex;
+  name: string;
+  text: string;
+  at: number;
+}
+
+/** WebRTC signalling payload relayed between two seats (opaque to the server). */
+export type VoiceSignal =
+  | { kind: 'offer'; sdp: string }
+  | { kind: 'answer'; sdp: string }
+  | { kind: 'candidate'; candidate: Record<string, unknown> | null };
