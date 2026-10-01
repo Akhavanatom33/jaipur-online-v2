@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { AckResult, SeatGrant } from '../../../shared/protocol.ts';
-import type { GameAction, RoomView } from '../../../shared/types.ts';
+import type { GameAction, GameMode, RoomView } from '../../../shared/types.ts';
 import { api, socket } from '../net/socket.ts';
 import { session } from '../net/storage.ts';
 
@@ -17,7 +17,7 @@ export interface RoomApi {
   connected: boolean;
   restoring: boolean;
   notice: string | null;
-  create: () => Promise<AckResult<SeatGrant>>;
+  create: (mode?: GameMode) => Promise<AckResult<SeatGrant>>;
   join: (code: string) => Promise<AckResult<SeatGrant>>;
   leave: () => Promise<void>;
   act: (action: GameAction) => Promise<AckResult>;
@@ -69,8 +69,8 @@ export function useRoom(enabled: boolean): RoomApi {
     };
   }, [enabled]);
 
-  const create = useCallback(async () => {
-    const res = await api.create();
+  const create = useCallback(async (mode: GameMode = 2) => {
+    const res = await api.create(mode);
     if (res.ok) saveSession(res);
     return res;
   }, []);
