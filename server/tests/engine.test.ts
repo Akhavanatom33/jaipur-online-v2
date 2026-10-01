@@ -280,9 +280,9 @@ test('player views never include hidden information', () => {
   const json = JSON.stringify(v);
   for (const c of s.round.players[1].hand) assert.ok(!json.includes(`"${c.id}"`), 'opponent hand id leaked');
   for (const c of s.round.deck) assert.ok(!json.includes(`"${c.id}"`), 'deck card leaked');
-  assert.equal(v.opponent.handCount, s.round.players[1].hand.length);
-  assert.equal(v.opponent.bonusTokens[0].value, null);
-  assert.ok(!('herd' in v.opponent));
+  assert.equal(v.opponents[0].handCount, s.round.players[1].hand.length);
+  assert.equal(v.opponents[0].bonusTokens[0].value, null);
+  assert.ok(!('herd' in v.opponents[0]));
   for (const size of [3, 4, 5] as BonusSize[]) assert.ok(!json.includes(`"value":${s.round.bonusStacks[size][0].value},"id"`));
   assert.ok(!JSON.stringify(v.round.bonusStacks).includes('value'));
 });
