@@ -12,7 +12,7 @@ interface Props {
 export function Market({ round, selected, dimmed, onCardClick, myTurn }: Props) {
   const camels = round.market.filter((c) => c.type === 'camel').length;
   return (
-    <section className={`market ${myTurn ? 'is-live' : ''}`} aria-label="Market">
+    <section className={`market market--n${round.market.length} ${myTurn ? 'is-live' : ''}`} aria-label="Market">
       <div className="market__pile" data-anchor="deck">
         <div className="deck-stack" style={{ ['--depth' as string]: Math.min(6, Math.ceil(round.deckCount / 7)) }}>
           {round.deckCount > 0 ? <CardView faceDown /> : <div className="card card--empty">empty</div>}
